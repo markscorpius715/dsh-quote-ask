@@ -119,6 +119,101 @@ window.__ModuleLoader__.load({
       return label
     }
 
+    /** 文本提取时视为「块级」的标签：块与块之间补一个换行。 */
+    const BLOCK_TAGS = new Set([
+      'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'BODY', 'DD', 'DETAILS', 'DIALOG', 'DIV',
+      'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3',
+      'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION',
+      'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR', 'UL',
+    ])
+    /** 完全不参与文本提取的标签。 */
+    const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG'])
+    /**
+     * 隐藏的公式副本：KaTeX 同时输出可见的 `.katex-html` 和给读屏用的 `.katex-mathml`。
+     * 后者参与选区但不可见，直接序列化会得到「每个符号一行」的伪影，必须跳过。
+     */
+    const HIDDEN_MATH_SELECTOR = '.katex-mathml, math'
+
+    /**
+     * 把一个 DOM 子树转成纯文本：文本节点原样拼；块级标签之间补 '\n'；
+     * 跳过隐藏的公式副本。`Selection#toString()` 对这类内容会逐符号换行，
+     * 所以引用文本按可见 DOM 自己取。
+     */
+    function textOfNode(node, out) {
+      if (node === null || node === undefined) return
+      if (node.nodeType === 3) {
+        const value = node.nodeValue ?? ''
+        // 块级标签之间的纯空白文本不产生内容（否则段落间会多出空行）。
+        if (value.trim() === '') {
+          const last = out[out.length - 1]
+          if (out.length === 0 || (typeof last === 'string' && last.endsWith('\n'))) return
+        }
+        out.push(value)
+        return
+      }
+      if (node.nodeType !== 1) return
+      const element = node
+      const tag = typeof element.tagName === 'string' ? element.tagName.toUpperCase() : ''
+      if (SKIP_TAGS.has(tag)) return
+      if (tag === 'MATH') return
+      if (typeof element.matches === 'function' && element.matches(HIDDEN_MATH_SELECTOR)) return
+      if (tag === 'BR') {
+        out.push('\n')
+        return
+      }
+      const block = BLOCK_TAGS.has(tag)
+      const pushNewline = () => {
+        const last = out[out.length - 1]
+        if (typeof last !== 'string' || !last.endsWith('\n')) out.push('\n')
+      }
+      if (block) pushNewline()
+      for (const child of element.childNodes) textOfNode(child, out)
+      if (block) pushNewline()
+    }
+
+    /** 从 Range 克隆内容后提取可见文本；失败返回 ''。 */
+    function extractRangeText(range) {
+      let fragment
+      try {
+        fragment = range.cloneContents()
+      } catch {
+        return ''
+      }
+      if (fragment === null || fragment === undefined) return ''
+      const out = []
+      try {
+        textOfNode(fragment, out)
+      } catch {
+        return ''
+      }
+      return normalizeSelectedText(out.join(''))
+    }
+
+    /**
+     * 兜底清理「逐字符换行」的选区伪影：行数不少、且绝大多数行只有
+     * 一两个字符时，说明不是真的换行，拼回一行。
+     */
+    function compactArtifactLines(text) {
+      const meaningful = text.split('\n').map((line) => line.trim()).filter((line) => line !== '')
+      if (meaningful.length < 5) return text
+      const short = meaningful.filter((line) => line.length <= 3).length
+      if (short / meaningful.length < 0.6) return text
+      return meaningful.join('')
+    }
+
+    /** 统一换行、收紧空白、最多保留一个空行，再清理逐字符伪影。 */
+    function normalizeSelectedText(raw) {
+      const text = String(raw ?? '')
+        .replace(/\r\n?/gu, '\n')
+        .replace(/\u00a0/gu, ' ')
+        .split('\n')
+        .map((line) => line.replace(/[ \t]+/gu, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/gu, '\n\n')
+        .trim()
+      return compactArtifactLines(text)
+    }
+
     /** 选中文字 → 带来源的 Markdown 引用块。 */
     function quoteMarkdown(text, source) {
       const head = source !== '' ? `> 引用自${source}\n` : ''
@@ -141,8 +236,6 @@ window.__ModuleLoader__.load({
       const selection = typeof document !== 'undefined' ? document.getSelection() : null
       if (selection === null || selection === undefined) return null
       if (selection.isCollapsed || selection.rangeCount === 0) return null
-      const text = selection.toString().trim()
-      if (text.length < 2 || text.length > MAX_SELECTION_CHARS) return null
       let range
       try {
         range = selection.getRangeAt(0)
@@ -152,6 +245,21 @@ window.__ModuleLoader__.load({
       const root = document.querySelector(CHAT_ROOT)
       if (root === null || !root.contains(range.commonAncestorContainer)) return null
       if (inEditable(range.startContainer) || inEditable(range.endContainer)) return null
+      let text = ''
+      try {
+        text = extractRangeText(range)
+      } catch {
+        text = ''
+      }
+      if (text === '') {
+        // 极少数取不到 DOM 的部署退回原生序列化，再做一次伪影清理。
+        try {
+          text = normalizeSelectedText(selection.toString())
+        } catch {
+          text = ''
+        }
+      }
+      if (text.length < 2 || text.length > MAX_SELECTION_CHARS) return null
       let rect
       try {
         rect = range.getBoundingClientRect()

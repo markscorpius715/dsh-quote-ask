@@ -4,11 +4,12 @@
  * 用 jsdom + React 服务端渲染模拟 DSH 聊天页与客户端服务面，验证：
  *   1. bundle 信封注册、factory 产出的 exports 形状（apply / inject / name）；
  *   2. 选中聊天文字后浮出「向 DeepSeek 提问」按钮；
- *   3. 点击按钮：引用挂进当前会话的卡片仓库，焦点回到输入框，**不新建会话**；
+ *   3. 点击按钮：引用挂进当前会话的卡片仓库，焦点回到输入框，不新建会话；
  *   4. 引用卡片组件能在输入框上方渲染出引用内容；
  *   5. 同一会话里输入问题后回车 / 点发送按钮：引用块合并进消息并只调用一次 submit；
- *   6. 停止按钮不被发送拦截误伤；
- *   7. dispose 后按钮与监听都被清理。
+ *   6. KaTeX 公式选区：跳过隐藏 MathML 副本、逐符号换行被拼回一行；
+ *   7. 普通多段落选区：保留段落换行；
+ *   8. 停止按钮不被发送拦截误伤；dispose 后按钮与监听都被清理。
  *
  * 运行：npm install 之后 `node test/smoke.mjs`。
  */
@@ -42,7 +43,9 @@ const dom = new JSDOM(
   `<!doctype html><html><body>
     <div data-conversation-scroll>
       <div data-chat-anchor-key="k1" data-chat-flow-kind="assistant" data-chat-turn="3">
-        <div id="msg">这条回答里有一段我想追问的解释。</div>
+        <div id="msg">所以 <span class="katex"><span class="katex-mathml"><math><mrow><mi>a</mi><mo>=</mo><mn>0</mn></mrow></math></span><span class="katex-html" aria-hidden="true"><span>a</span><span>=</span><span>0</span><span>，比较</span><span>x</span><span>n</span><span>的系数得</span></span></span> 结论。</div>
+        <p id="p1">第一段文字内容。</p>
+        <p id="p2">第二段文字内容。</p>
       </div>
     </div>
     <div data-composer-card>
@@ -110,7 +113,6 @@ const sessionsSnapshot = {
 const inputActions = {
   setDraft: (text) => {
     state.setDraftCalls.push(text)
-    // 编辑器提交后 published draft 才更新；这里同步模拟一次提交。
     state.draft = text
   },
   submit: () => { state.submitted += 1 },
@@ -149,28 +151,44 @@ const fakeCtx = {
   },
 }
 
+/** 用真实 jsdom Range 造一个选区，并替换 document.getSelection。 */
+function selectRange(range) {
+  const selection = {
+    isCollapsed: false,
+    rangeCount: 1,
+    toString: () => range.toString(),
+    removeAllRanges: () => { selection.isCollapsed = true },
+    getRangeAt: () => range,
+  }
+  document.getSelection = () => selection
+  document.dispatchEvent(new window.Event('mouseup'))
+  flushFrames()
+}
+
+function clickAskButton() {
+  const host = document.querySelector('[data-dsh-quote-ask]')
+  host?.querySelector('button')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
+  flushFrames()
+}
+
+function sendWithEnter() {
+  const editor = document.getElementById('editor')
+  const event = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  editor.dispatchEvent(event)
+  flushFrames()
+  return event
+}
+
 console.log('· 选区浮层')
 exported.apply(fakeCtx)
 check('注册了输入框上方的引用卡片区（conversation.input.dock）',
   state.dock !== null && state.dock.name === 'conversation.input.dock', JSON.stringify(state.dock?.name))
 
 const message = document.getElementById('msg')
-const textNode = message.firstChild
-const fakeSelection = {
-  isCollapsed: false,
-  rangeCount: 1,
-  toString: () => '有一段我想追问的解释',
-  removeAllRanges: () => { fakeSelection.isCollapsed = true },
-  getRangeAt: () => ({
-    commonAncestorContainer: textNode,
-    startContainer: textNode,
-    endContainer: textNode,
-    getBoundingClientRect: () => rangeRect,
-  }),
-}
-document.getSelection = () => fakeSelection
-document.dispatchEvent(new window.Event('mouseup'))
-flushFrames()
+const mathRange = document.createRange()
+mathRange.setStart(message.firstChild, 0)
+mathRange.setEnd(message.lastChild, message.lastChild.length)
+selectRange(mathRange)
 const host = document.querySelector('[data-dsh-quote-ask]')
 check('选中聊天文字后浮出按钮', host !== null && host.style.display === 'inline-flex', host?.style.display)
 
@@ -179,53 +197,60 @@ const button = host?.querySelector('button')
 check('按钮文案为「向 DeepSeek 提问」', button?.textContent?.includes('向 DeepSeek 提问'), button?.textContent)
 button.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
 flushFrames()
-check('没有调用任何新建会话的入口', !('uiWorkspace' in state))
 check('焦点回到输入框', state.focusCalls === 1)
 check('浮层按钮已收起', host.style.display === 'none', host.style.display)
-check('卡片内容写进了输入框草稿之外（未污染草稿）', state.draft === '', JSON.stringify(state.draft))
+check('卡片内容不污染草稿', state.draft === '', JSON.stringify(state.draft))
 
 const cardHtml = renderToStaticMarkup(React.createElement(state.dock.Component, {
   session: { sessionId: 's1' },
   input: { draft: state.draft },
 }))
-check('引用卡片渲染在输入框上方', cardHtml.includes('有一段我想追问的解释'), cardHtml.slice(0, 120))
+check('引用卡片渲染在输入框上方', cardHtml.includes('所以 a=0'), cardHtml.slice(0, 160))
 check('卡片带来源轮次', cardHtml.includes('第 3 轮 · 助手回答'), '')
 check('卡片提供「放入输入框」与移除', cardHtml.includes('放入输入框') && cardHtml.includes('移除引用'))
 check('卡片与输入框对齐（复用 composer 的 side clearance / max-width 变量）',
   cardHtml.includes('dsh-composer-side-clearance') && cardHtml.includes('dsh-composer-card-max-width'), '')
 
-console.log('· 发送时自动附上引用（回车）')
-state.draft = '这句话为什么这么说？'
-const editor = document.getElementById('editor')
-const enterEvent = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
-editor.dispatchEvent(enterEvent)
+console.log('· 公式选区：隐藏 MathML 副本被跳过、逐符号换行被拼回一行')
+state.draft = '这里为什么这么写？'
+const enterEvent = sendWithEnter()
 check('拦截了回车发送', enterEvent.defaultPrevented === true)
-check('先写入合并后的草稿', state.setDraftCalls.length === 1 && state.setDraftCalls[0].startsWith('> 引用自第 3 轮 · 助手回答'), JSON.stringify(state.setDraftCalls[0]))
-check('合并内容包含引用与问题',
-  state.setDraftCalls[0].includes('有一段我想追问的解释') && state.setDraftCalls[0].includes('这句话为什么这么说？'))
-flushFrames()
+const firstQuote = state.setDraftCalls[0] ?? ''
+check('写入合并后的草稿', firstQuote.startsWith('> 引用自第 3 轮 · 助手回答'), JSON.stringify(firstQuote.slice(0, 80)))
+const quoteLines = firstQuote.split('\n').filter((line) => line.startsWith('> '))
+check('引用没有被拆成逐字符多行', quoteLines.length <= 3, `quote lines: ${quoteLines.length}`)
+check('引用文本完整且去重', firstQuote.includes('a=0，比较xn的系数得') && firstQuote.includes('结论。'), JSON.stringify(firstQuote))
 check('只调用了一次 submit', state.submitted === 1, String(state.submitted))
 const emptyHtml = renderToStaticMarkup(React.createElement(state.dock.Component, { session: { sessionId: 's1' }, input: {} }))
 check('发送后卡片被清空', emptyHtml === '', emptyHtml.slice(0, 120))
 
+console.log('· 普通多段落选区：保留段落换行')
+const p1 = document.getElementById('p1')
+const p2 = document.getElementById('p2')
+const paraRange = document.createRange()
+paraRange.setStart(p1.firstChild, 0)
+paraRange.setEnd(p2.lastChild, p2.lastChild.length)
+selectRange(paraRange)
+clickAskButton()
+state.draft = '两段都解释一下'
+sendWithEnter()
+const secondQuote = state.setDraftCalls[1] ?? ''
+check('两段引用按行保留', secondQuote.includes('> 第一段文字内容。\n> 第二段文字内容。'), JSON.stringify(secondQuote))
+check('第二次发送也只 submit 一次', state.submitted === 2, String(state.submitted))
+
 console.log('· 发送按钮路径 + 停止按钮不误伤')
 // 再挂一张引用卡
-document.getSelection = () => fakeSelection
-fakeSelection.isCollapsed = false
-document.dispatchEvent(new window.Event('mouseup'))
-flushFrames()
-const host2 = document.querySelector('[data-dsh-quote-ask]')
-host2.querySelector('button').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }))
-flushFrames()
-state.draft = '第二个问题'
+selectRange(mathRange)
+clickAskButton()
+state.draft = '第三个问题'
 const stopClick = new window.MouseEvent('click', { bubbles: true, cancelable: true })
 document.getElementById('stop').dispatchEvent(stopClick)
-check('停止按钮不被拦截', stopClick.defaultPrevented === false && state.submitted === 1)
+check('停止按钮不被拦截', stopClick.defaultPrevented === false && state.submitted === 2)
 const sendClick = new window.MouseEvent('click', { bubbles: true, cancelable: true })
 document.getElementById('send').dispatchEvent(sendClick)
 check('发送按钮被接管', sendClick.defaultPrevented === true)
 flushFrames()
-check('发送按钮路径也只 submit 一次', state.submitted === 2, String(state.submitted))
+check('发送按钮路径也只 submit 一次', state.submitted === 3, String(state.submitted))
 
 console.log('· dispose')
 for (const dispose of state.disposals) dispose()

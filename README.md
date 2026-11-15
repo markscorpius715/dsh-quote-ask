@@ -36,7 +36,7 @@ dsh plugin --profile web add github:markscorpius715/dsh-quote-ask
 **从 Release 的 tgz 安装**
 
 ```bash
-dsh plugin --profile web add https://github.com/markscorpius715/dsh-quote-ask/releases/download/v0.1.0/dsh-quote-ask-0.1.0.tgz
+dsh plugin --profile web add https://github.com/markscorpius715/dsh-quote-ask/releases/download/v0.1.1/dsh-quote-ask-0.1.1.tgz
 ```
 
 **本地开发目录安装**

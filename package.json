@@ -1,62 +1,64 @@
-{
-  "name": "dsh-quote-ask",
-  "version": "0.1.0",
-  "type": "module",
-  "main": "index.js",
-  "description": "ChatGPT-style select-to-ask for DeepSeek Harness: select text in a conversation, click 「向 DeepSeek 提问」, and a quote card appears above the composer \u2014 keep chatting in the same conversation with the quote attached.",
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "deepseek-harness",
-    "deepseek",
-    "quote",
-    "selection",
-    "composer",
-    "ask",
-    "chatgpt"
-  ],
-  "author": "markscorpius715",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/markscorpius715/dsh-quote-ask.git"
-  },
-  "homepage": "https://github.com/markscorpius715/dsh-quote-ask#readme",
-  "bugs": {
-    "url": "https://github.com/markscorpius715/dsh-quote-ask/issues"
-  },
-  "exports": {
-    ".": "./index.js",
-    "./client": "./client.js",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "index.js",
-    "client.js",
-    "cordis.patch.yml",
-    "README.md",
-    "LICENSE"
-  ],
-  "engines": {
-    "node": ">=22",
-    "dsh": ">=0.2.0-rc.2 <0.3.0"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [],
-      "immediately": true
-    }
-  },
-  "scripts": {
-    "test": "node test/smoke.mjs"
-  },
-  "devDependencies": {
-    "jsdom": "^26.0.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  }
+﻿{
+    "name":  "dsh-quote-ask",
+    "version":  "0.1.1",
+    "type":  "module",
+    "main":  "index.js",
+    "description":  "ChatGPT-style select-to-ask for DeepSeek Harness: select text in a conversation, click 銆屽悜 DeepSeek 鎻愰棶銆? and a quote card appears above the composer — keep chatting in the same conversation with the quote attached.",
+    "keywords":  [
+                     "dsh",
+                     "dsh-plugin",
+                     "deepseek-harness",
+                     "deepseek",
+                     "quote",
+                     "selection",
+                     "composer",
+                     "ask",
+                     "chatgpt"
+                 ],
+    "author":  "markscorpius715",
+    "license":  "MIT",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://github.com/markscorpius715/dsh-quote-ask.git"
+                   },
+    "homepage":  "https://github.com/markscorpius715/dsh-quote-ask#readme",
+    "bugs":  {
+                 "url":  "https://github.com/markscorpius715/dsh-quote-ask/issues"
+             },
+    "exports":  {
+                    ".":  "./index.js",
+                    "./client":  "./client.js",
+                    "./package.json":  "./package.json"
+                },
+    "files":  [
+                  "index.js",
+                  "client.js",
+                  "cordis.patch.yml",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "engines":  {
+                    "node":  "\u003e=22",
+                    "dsh":  "\u003e=0.2.0-rc.2 \u003c0.3.0"
+                },
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "platform":  "web",
+                               "inject":  [
+
+                                          ],
+                               "immediately":  true
+                           }
+            },
+    "scripts":  {
+                    "test":  "node test/smoke.mjs"
+                },
+    "devDependencies":  {
+                            "jsdom":  "^26.0.0",
+                            "react":  "18.3.1",
+                            "react-dom":  "18.3.1"
+                        }
 }
