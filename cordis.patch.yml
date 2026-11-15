@@ -1,0 +1,4 @@
+# dsh-quote-ask bundle patch: mount the host half into the active profile.
+- insert:
+    - id: quote-ask
+      name: dsh-quote-ask
