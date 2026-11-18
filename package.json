@@ -1,6 +1,6 @@
 {
   "name": "dsh-quote-ask",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "main": "index.js",
   "description": "ChatGPT-style select-to-ask for DeepSeek Harness: select text in a conversation, click 「向 DeepSeek 提问」, and a quote card appears above the composer — keep chatting in the same conversation with the quote attached.",
