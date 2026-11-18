@@ -34,6 +34,22 @@ function check(label, condition, extra) {
   }
 }
 
+console.log('· package manifest')
+// Windows 工具（PowerShell 5.1 的 ConvertTo-Json + Out-File -Encoding utf8 等）会把
+// package.json 写成带 UTF-8 BOM 的文件；Node 的 JSON.parse 拒绝开头的 U+FEFF，
+// dsh 启动时就会报 'skipping profile bundle "dsh-quote-ask"'，整个插件不加载。
+const manifestRaw = readFileSync(join(here, '..', 'package.json'), 'utf8')
+check('package.json 不含 UTF-8 BOM', manifestRaw.charCodeAt(0) !== 0xfeff, '开头的 U+FEFF 会让 dsh 跳过整个 bundle')
+let manifest
+try {
+  manifest = JSON.parse(manifestRaw)
+} catch (error) {
+  failures += 1
+  console.error(`  ✗ package.json 是合法 JSON — ${error}`)
+  manifest = {}
+}
+check('声明 dsh.bundle.patch 指向补丁文件', typeof manifest.dsh?.bundle?.patch === 'string')
+
 console.log('· host half')
 check('name 为 dsh-quote-ask', hostName === 'dsh-quote-ask')
 check('不与新建会话耦合', !clientSource.includes('startSession'), 'client.js 仍含 startSession')
